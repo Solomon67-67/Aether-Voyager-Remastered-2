@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aether Voyager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; touch-action: none; }
+        canvas { display: block; width: 100%; height: 100%; z-index: 1; position: absolute; top: 0; left: 0; }
+        
+        .ui-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+        
+        /* Cockpit Vignette */
+        .vignette {
+            position: absolute; inset: 0; z-index: 5; pointer-events: none;
+            box-shadow: inset 0 0 150px rgba(0,0,0,0.9);
+        }
+
+        /* Mobile Portrait Warning */
+        #rotation-warning { display: none; }
+        @media screen and (orientation: portrait) {
+            #rotation-warning {
+                display: flex; position: fixed; inset: 0; background: #000; z-index: 9999;
+                flex-direction: column; align-items: center; justify-content: center; text-align: center; color: white;
+            }
+            .phone-icon {
+                width: 60px; height: 100px; border: 4px solid white; border-radius: 10px; margin-bottom: 20px;
+                animation: rotatePhone 2s infinite ease-in-out;
+            }
+            @keyframes rotatePhone {
+                0% { transform: rotate(0deg); }
+                50% { transform: rotate(-90deg); }
+                100% { transform: rotate(-90deg); }
+            }
+        }
+        
+        .glass-panel { background: rgba(10, 15, 30, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(0, 255, 255, 0.2); }
+        .text-glow { text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); }
+        .text-glow-red { text-shadow: 0 0 10px rgba(255, 50, 50, 0.8); }
+        .text-glow-gold { text-shadow: 0 0 15px rgba(255, 215, 0, 1); }
+        
+        /* New UI Elements */
+        .crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; opacity: 0.35; z-index: 5; }
+        .progress-container { width: 100%; height: 6px; background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,255,0.2); border-radius: 4px; margin-top: 8px; overflow: hidden; box-shadow: inset 0 0 5px #000; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #0055ff, #00ffff); width: 0%; transition: width 0.1s linear; box-shadow: 0 0 10px #00ffff; }
+    </style>
+</head>
+<body class="text-white selection:bg-cyan-500/30">
+
+    <div id="rotation-warning">
+        <div class="phone-icon"></div>
+        <h2 class="text-2xl font-bold mb-2">Rotate Your Device</h2>
+        <p class="text-gray-400">Aether Voyager is best played in landscape mode.</p>
+    </div>
+
+    <div class="vignette"></div>
+
+    <div id="main-menu" class="ui-layer flex flex-col items-center justify-center interactive bg-black/60 backdrop-blur-sm transition-opacity duration-500">
+        <div class="glass-panel p-8 md:p-12 rounded-3xl max-w-xl w-[90%] text-center shadow-[0_0_50px_rgba(0,255,255,0.1)]">
+            <h1 class="text-5xl md:text-7xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-b from-white to-cyan-500 text-glow tracking-tighter">AETHER<br>VOYAGER</h1>
+            <p class="text-cyan-400 mb-8 font-semibold tracking-widest text-sm md:text-base">DEEP SPACE SURVIVAL</p>
+            
+            <div class="mb-8 bg-black/40 p-4 rounded-xl border border-gray-800 text-left text-sm md:text-base text-gray-300">
+                <p class="mb-2"><span class="text-cyan-400 font-bold">PC:</span> Move mouse to steer.</p>
+                <p class="mb-2"><span class="text-cyan-400 font-bold">MOBILE:</span> Drag screen to steer.</p>
+                <p><span class="text-yellow-400 font-bold">TIPS:</span> Dodge Lunar Asteroids. Collect Cyan Crystals. Fly through Gold Rings for Hyperdrive!</p>
+            </div>
+
+            <button id="start-btn" class="w-full py-4 bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 rounded-xl font-bold text-xl uppercase tracking-widest transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(0,255,255,0.4)]">
+                Launch Sequence
+            </button>
+        </div>
+    </div>
+
+    <div id="hud" class="ui-layer hidden flex-col justify-between p-4 md:p-6">
+        <div class="flex justify-between items-start">
+            <div class="glass-panel px-4 py-2 rounded-xl border border-cyan-500/30">
+                <div class="text-xs text-cyan-400 font-bold tracking-wider mb-1">HULL INTEGRITY</div>
+                <div class="w-32 md:w-48 h-3 bg-gray-900 rounded-full overflow-hidden shadow-[inset_0_0_5px_rgba(0,0,0,1)]">
+                    <div id="health-bar" class="h-full bg-cyan-400 w-full transition-all duration-200 shadow-[0_0_10px_rgba(0,255,255,0.8)]"></div>
+                </div>
+            </div>
+            
+            <div class="glass-panel px-6 py-2 rounded-xl text-center hidden md:block border border-cyan-500/30">
+                <div class="text-xs text-gray-400 font-bold tracking-wider mb-1">SECTOR</div>
+                <div id="sector-display" class="text-xl font-black text-white tracking-widest text-glow">1 - LUNA</div>
+            </div>
+
+            <div class="glass-panel px-4 py-2 rounded-xl text-right flex flex-col items-end border border-cyan-500/30">
+                <div class="text-xs text-cyan-400 font-bold tracking-wider mb-1">SCORE</div>
+                <div id="score-display" class="text-2xl md:text-3xl font-black text-glow leading-none">0</div>
+                <div class="mt-2 text-xs text-gray-400 font-bold tracking-wider">VELOCITY</div>
+                <div id="velocity-display" class="text-lg font-mono text-fuchsia-400 text-glow">MACH 1.0</div>
+            </div>
+        </div>
+
+        <div class="flex justify-between items-end">
+            <div class="glass-panel px-4 py-3 rounded-xl flex flex-col items-start min-w-[160px] md:min-w-[220px] border border-cyan-500/30 bg-black/60">
+                <div class="text-xs text-gray-400 font-bold tracking-wider mb-1">DESTINATION: <span id="planet-name" class="text-cyan-300">Moon</span></div>
+                <div class="flex justify-between w-full items-end mt-1">
+                    <div id="distance-display" class="text-xl font-mono text-white text-glow">1000 km</div>
+                    <div class="text-[10px] text-gray-500 font-mono mb-0.5">REMAINING</div>
+                </div>
+                <div class="progress-container">
+                    <div id="journey-progress" class="progress-bar"></div>
+                </div>
+            </div>
+            
+            <div class="glass-panel p-3 rounded-full hidden md:flex items-center justify-center opacity-80 border border-cyan-500/30">
+                <svg width="50" height="50" viewBox="0 0 100 100" class="animate-[spin_8s_linear_infinite]">
+                    <circle cx="50" cy="50" r="45" fill="none" stroke="#00ffff" stroke-width="1.5" stroke-dasharray="10 5" />
+                    <circle cx="50" cy="50" r="30" fill="none" stroke="#ff00ff" stroke-width="2" stroke-dasharray="4 6" />
+                    <circle cx="50" cy="50" r="15" fill="none" stroke="#00ffff" stroke-width="1" />
+                    <polygon points="50,5 55,15 45,15" fill="#00ffff" />
+                    <polygon points="50,95 55,85 45,85" fill="#00ffff" />
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <div id="crosshair" class="crosshair hidden">
+        <svg width="80" height="80" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="12" fill="none" stroke="#00ffff" stroke-width="1" />
+            <circle cx="50" cy="50" r="40" fill="none" stroke="#00ffff" stroke-width="0.5" stroke-dasharray="4 4" />
+            <line x1="50" y1="20" x2="50" y2="35" stroke="#00ffff" stroke-width="2" />
+            <line x1="50" y1="80" x2="50" y2="65" stroke="#00ffff" stroke-width="2" />
+            <line x1="20" y1="50" x2="35" y2="50" stroke="#00ffff" stroke-width="2" />
+            <line x1="80" y1="50" x2="65" y2="50" stroke="#00ffff" stroke-width="2" />
+        </svg>
+    </div>
+
+    <div id="warning-overlay" class="ui-layer hidden flex items-center justify-center bg-red-900/20">
+        <h2 class="text-4xl md:text-6xl font-black text-red-500 text-glow-red animate-pulse">WARNING: HIGH VELOCITY IMPACT</h2>
+    </div>
+
+    <div id="near-miss-text" class="ui-layer hidden flex justify-center items-center pointer-events-none">
+        <div class="text-3xl md:text-5xl font-black text-white text-glow mb-32 opacity-0 transition-opacity duration-200" id="near-miss-anim">NEAR MISS! +50</div>
+    </div>
+
+    <div id="hyperdrive-text" class="ui-layer hidden flex justify-center items-center pointer-events-none">
+        <div class="text-4xl md:text-6xl font-black text-yellow-400 text-glow-gold mb-48 animate-pulse">HYPERDRIVE ACTIVE</div>
+    </div>
+
+    <div id="shield-text" class="ui-layer hidden flex justify-center items-center pointer-events-none">
+        <div class="text-4xl md:text-6xl font-black text-fuchsia-400 text-glow mb-16 animate-bounce">SHIELD ONLINE</div>
+    </div>
+
+    <div id="planet-arrival" class="ui-layer hidden items-center justify-center bg-cyan-900/30 backdrop-blur-md">
+        <div class="text-center">
+            <h2 class="text-3xl md:text-5xl font-black text-white mb-4">REACHED <span id="arrival-name" class="text-cyan-400">PLANET</span></h2>
+            <p class="text-xl text-green-400 font-bold mb-6">+ HULL REPAIRED</p>
+            <p class="text-gray-300 animate-pulse">Preparing next warp jump...</p>
+        </div>
+    </div>
+
+    <div id="game-over" class="ui-layer hidden flex-col items-center justify-center interactive bg-red-900/80 backdrop-blur-md">
+        <h2 class="text-6xl md:text-8xl font-black text-white mb-2 text-glow-red">HULL BREACH</h2>
+        <p class="text-2xl text-gray-300 mb-8">Final Score: <span id="final-score" class="text-cyan-400 font-bold text-glow">0</span></p>
+        <button onclick="location.reload()" class="px-8 py-4 bg-white text-red-900 rounded-xl font-bold text-xl uppercase tracking-widest transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,255,255,0.5)]">
+            Reboot System
+        </button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Safe Init (Prevents GitHub Pages crash)
+        let db = null;
+        let auth = null;
+        let userId = null;
+        
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                signInAnonymously(auth).then((userCredential) => {
+                    userId = userCredential.user.uid;
+                }).catch(e => console.warn("Firebase Auth bypassed."));
+            }
+        } catch (e) {
+            console.warn("Firebase not detected, running locally.");
+        }
+
+        // Global Game State
+        let gameState = 'MENU'; // MENU, FLIGHT, ARRIVAL, GAMEOVER
+        let score = 0;
+        let health = 100;
+        let speedMult = 1;
+        let currentSpeed = 0;
+        let distance = 1000;
+        
+        // Progression
+        const PLANETS = [
+            { name: 'Moon', color: 0xcccccc, dist: 1000, sector: 'LUNA' },
+            { name: 'Mars', color: 0xff4400, dist: 1500, sector: 'ARES' },
+            { name: 'Jupiter', color: 0xffaa55, dist: 2000, sector: 'JOVE' },
+            { name: 'Saturn', color: 0xeeddcc, dist: 2500, hasRings: true, sector: 'CHRONOS' },
+            { name: 'Earth', color: 0x4488ff, dist: 3000, final: true, sector: 'TERRA' }
+        ];
+        let currentPlanetIndex = 0;
+
+        // Input State (Pure Tracking)
+        let mouseX = 0;
+        let mouseY = 0;
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        // Physics/Mechanics
+        const BOUNDARY_X = 18;
+        const BOUNDARY_Y = 10;
+        let timeScale = 1.0; // For Bullet Time
+        let isHyperdrive = false;
+
+        // Audio System (Tone.js)
+        const synth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "sawtooth" },
+            envelope: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 1 }
+        }).toDestination();
+        synth.volume.value = -10;
+        
+        const noise = new Tone.Noise("brown");
+        const noiseFilter = new Tone.Filter(400, "lowpass").toDestination();
+        noise.connect(noiseFilter);
+        noise.volume.value = -15;
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.002);
+
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 10);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const moonLight = new THREE.PointLight(0xffffff, 2.5, 500);
+        moonLight.position.set(50, 50, -100);
+        scene.add(moonLight);
+
+        // Objects Arrays
+        let vehicle;
+        let asteroids = [];
+        let crystals = [];
+        let warpRings = [];
+        let particles = [];
+        let starfield;
+        let currentPlanetMesh;
+        let ringMesh;
+        
+        let mines = [];
+        let shields = [];
+        let hasShield = false;
+        let shieldMesh;
+
+        function createVehicle() {
+            const group = new THREE.Group();
+            
+            // Main fuselage (pointing forward -Z)
+            const bodyGeo = new THREE.CylinderGeometry(0.5, 1.2, 5, 8);
+            bodyGeo.rotateX(Math.PI / 2);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.8, roughness: 0.2 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            
+            // Cockpit glass
+            const glassGeo = new THREE.SphereGeometry(0.6, 8, 8);
+            glassGeo.scale(1, 0.5, 2);
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.9, roughness: 0.1 });
+            const glass = new THREE.Mesh(glassGeo, glassMat);
+            glass.position.set(0, 0.5, 1); // Towards front
+            
+            // Side Boosters
+            const boosterGeo = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
+            boosterGeo.rotateX(Math.PI / 2);
+            const boosterMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.9 });
+            
+            const bLeft = new THREE.Mesh(boosterGeo, boosterMat);
+            bLeft.position.set(-1.5, -0.2, -1);
+            const bRight = new THREE.Mesh(boosterGeo, boosterMat);
+            bRight.position.set(1.5, -0.2, -1);
+
+            // Engine glow (rear)
+            const engineLight = new THREE.PointLight(0x00ffff, 2, 5);
+            engineLight.position.set(0, 0, -3);
+
+            const shieldGeo = new THREE.SphereGeometry(2.5, 16, 16);
+            const shieldMat = new THREE.MeshBasicMaterial({ 
+                color: 0xaa00ff, 
+                transparent: true, 
+                opacity: 0.3,
+                wireframe: true 
+            });
+            shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+            shieldMesh.visible = false;
+
+            group.add(body, glass, bLeft, bRight, engineLight, shieldMesh);
+            
+            // Position vehicle pointing away from camera
+            group.position.set(0, 0, 0);
+            scene.add(group);
+            return group;
+        }
+
+        function createAsteroid() {
+            const size = Math.random() * 3 + 2; // Large lunar rocks
+            const geo = new THREE.DodecahedronGeometry(size, 1);
+            
+            // Distort vertices to make it look rugged
+            const positions = geo.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                positions.setXYZ(i, 
+                    positions.getX(i) + (Math.random() - 0.5),
+                    positions.getY(i) + (Math.random() - 0.5),
+                    positions.getZ(i) + (Math.random() - 0.5)
+                );
+            }
+            geo.computeVertexNormals();
+
+            // Lunar gray color
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0x9999a0, 
+                roughness: 0.9, 
+                metalness: 0.1 
+            });
+            
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            // Spawn far away in front
+            mesh.position.set(
+                (Math.random() - 0.5) * BOUNDARY_X * 3,
+                (Math.random() - 0.5) * BOUNDARY_Y * 3,
+                -200 - Math.random() * 100
+            );
+
+            // Give it tumbling rotation speeds
+            mesh.userData = {
+                rotX: (Math.random() - 0.5) * 0.05,
+                rotY: (Math.random() - 0.5) * 0.05,
+                rotZ: (Math.random() - 0.5) * 0.05,
+                isShootingStar: Math.random() > 0.95, // 5% chance
+                size: size
+            };
+
+            if (mesh.userData.isShootingStar) {
+                mat.color.setHex(0xffaa00);
+                mat.emissive.setHex(0xff3300);
+                mesh.scale.set(0.5, 0.5, 3); // Streaking shape
+            }
+
+            scene.add(mesh);
+            asteroids.push(mesh);
+        }
+
+        function createCrystal() {
+            const geo = new THREE.OctahedronGeometry(1, 0);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0x00ffff, emissive: 0x00aaaa, wireframe: true
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.set(
+                (Math.random() - 0.5) * BOUNDARY_X * 2,
+                (Math.random() - 0.5) * BOUNDARY_Y * 2,
+                -150 - Math.random() * 50
+            );
+            scene.add(mesh);
+            crystals.push(mesh);
+        }
+
+        function createWarpRing() {
+            const geo = new THREE.TorusGeometry(3, 0.2, 16, 50);
+            const mat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.8 });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.set(
+                (Math.random() - 0.5) * BOUNDARY_X * 1.5,
+                (Math.random() - 0.5) * BOUNDARY_Y * 1.5,
+                -300
+            );
+            scene.add(mesh);
+            warpRings.push(mesh);
+        }
+
+        function createMine() {
+            const geo = new THREE.IcosahedronGeometry(2, 0);
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0xff0000, emissive: 0x550000, roughness: 0.5, wireframe: true 
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.set(
+                (Math.random() - 0.5) * BOUNDARY_X * 2,
+                (Math.random() - 0.5) * BOUNDARY_Y * 2,
+                -250 - Math.random() * 50
+            );
+            
+            mesh.userData = { scalePulse: Math.random() * Math.PI };
+            scene.add(mesh);
+            mines.push(mesh);
+        }
+
+        function createShieldItem() {
+            const geo = new THREE.TetrahedronGeometry(1.5, 0);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xff00ff, emissive: 0xaa00aa
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.set(
+                (Math.random() - 0.5) * BOUNDARY_X * 2,
+                (Math.random() - 0.5) * BOUNDARY_Y * 2,
+                -200 - Math.random() * 50
+            );
+            scene.add(mesh);
+            shields.push(mesh);
+        }
+
+        function createTrailParticle(x, y, z) {
+            const particleGeo = new THREE.BufferGeometry();
+            const posArray = new Float32Array([x, y, z]);
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            
+            const color = isHyperdrive ? 0xffd700 : 0x00ffff;
+            const particleMat = new THREE.PointsMaterial({ size: 0.8, color: color, transparent: true, opacity: 0.8 });
+            const pSystem = new THREE.Points(particleGeo, particleMat);
+            
+            scene.add(pSystem);
+            particles.push({ sys: pSystem, vel: [{x: 0, y: 0, z: 0.5}], age: 20 }); // Starts slightly aged to disappear faster
+        }
+
+        function createExplosion(x, y, z, color) {
+            const particleGeo = new THREE.BufferGeometry();
+            const particleCount = 20;
+            const posArray = new Float32Array(particleCount * 3);
+            const velArray = [];
+
+            for(let i=0; i<particleCount*3; i+=3) {
+                posArray[i] = x; posArray[i+1] = y; posArray[i+2] = z;
+                velArray.push({
+                    x: (Math.random() - 0.5) * 2,
+                    y: (Math.random() - 0.5) * 2,
+                    z: (Math.random() - 0.5) * 2
+                });
+            }
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const particleMat = new THREE.PointsMaterial({ size: 0.5, color: color });
+            const pSystem = new THREE.Points(particleGeo, particleMat);
+            
+            scene.add(pSystem);
+            particles.push({ sys: pSystem, vel: velArray, age: 0 });
+        }
+
+        function createStarfield() {
+            const starGeo = new THREE.BufferGeometry();
+            const starCount = 2000;
+            const posArray = new Float32Array(starCount * 3);
+            
+            for(let i=0; i<starCount*3; i+=3) {
+                posArray[i] = (Math.random() - 0.5) * 400;
+                posArray[i+1] = (Math.random() - 0.5) * 400;
+                posArray[i+2] = (Math.random() - 0.5) * 400;
+            }
+            
+            starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            const starMat = new THREE.PointsMaterial({ size: 0.5, color: 0xffffff, transparent: true, opacity: 0.8 });
+            starfield = new THREE.Points(starGeo, starMat);
+            scene.add(starfield);
+        }
+
+        function spawnPlanet(planetData) {
+            if (currentPlanetMesh) scene.remove(currentPlanetMesh);
+            if (ringMesh) scene.remove(ringMesh);
+
+            const geo = new THREE.SphereGeometry(60, 32, 32);
+            const mat = new THREE.MeshStandardMaterial({ color: planetData.color, roughness: 0.8 });
+            currentPlanetMesh = new THREE.Mesh(geo, mat);
+            // Initialize at the far edge of the camera's sight
+            currentPlanetMesh.position.set(0, 0, -1000);
+            scene.add(currentPlanetMesh);
+
+            if (planetData.hasRings) {
+                const ringGeo = new THREE.RingGeometry(80, 120, 64);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+                ringMesh = new THREE.Mesh(ringGeo, ringMat);
+                ringMesh.position.copy(currentPlanetMesh.position);
+                ringMesh.rotation.x = Math.PI / 2 - 0.2;
+                scene.add(ringMesh);
+            }
+            
+            distance = planetData.dist;
+            document.getElementById('planet-name').innerText = planetData.name;
+            const sectorDisplay = document.getElementById('sector-display');
+            if(sectorDisplay) sectorDisplay.innerText = `${currentPlanetIndex + 1} - ${planetData.sector}`;
+        }
+
+        window.addEventListener('mousemove', e => { 
+            if(gameState !== 'FLIGHT') return;
+            // Map screen coords to -1 to 1 range without needing to click
+            mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        window.addEventListener('touchstart', e => {
+            if(gameState !== 'FLIGHT') return;
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, {passive: false});
+
+        window.addEventListener('touchmove', e => {
+            if(gameState !== 'FLIGHT') return;
+            e.preventDefault();
+            const deltaX = (e.touches[0].clientX - touchStartX) / window.innerWidth * 3;
+            const deltaY = -(e.touches[0].clientY - touchStartY) / window.innerHeight * 3;
+            
+            mouseX += deltaX;
+            mouseY += deltaY;
+            
+            // Clamp conceptually
+            mouseX = Math.max(-1, Math.min(1, mouseX));
+            mouseY = Math.max(-1, Math.min(1, mouseY));
+            
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, {passive: false});
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        function startGame() {
+            document.getElementById('main-menu').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            document.getElementById('hud').classList.add('flex');
+            document.getElementById('crosshair').classList.remove('hidden');
+            document.getElementById('crosshair').classList.add('flex');
+            
+            // Start Audio Engine
+            Tone.start();
+            noise.start();
+
+            // Init 3D Scene
+            scene.clear();
+            scene.add(ambientLight);
+            scene.add(moonLight);
+            
+            vehicle = createVehicle();
+            createStarfield();
+            
+            currentPlanetIndex = 0;
+            spawnPlanet(PLANETS[currentPlanetIndex]);
+            
+            asteroids = [];
+            crystals = [];
+            warpRings = [];
+            particles = [];
+            mines = [];
+            shields = [];
+            
+            health = 100;
+            score = 0;
+            speedMult = 1.0;
+            isHyperdrive = false;
+            hasShield = false;
+            if(shieldMesh) shieldMesh.visible = false;
+            timeScale = 1.0;
+            updateHUD();
+
+            gameState = 'FLIGHT';
+        }
+
+        document.getElementById('start-btn').addEventListener('click', startGame);
+
+        function triggerNearMiss() {
+            score += 50;
+            updateHUD();
+            
+            // Bullet time effect
+            timeScale = 0.2; 
+            setTimeout(() => { timeScale = 1.0; }, 600);
+
+            // Audio Cue
+            synth.triggerAttackRelease("C5", "16n");
+
+            // UI Cue
+            const nmText = document.getElementById('near-miss-anim');
+            nmText.style.opacity = '1';
+            nmText.style.transform = 'scale(1.5)';
+            setTimeout(() => {
+                nmText.style.opacity = '0';
+                nmText.style.transform = 'scale(1)';
+            }, 500);
+        }
+
+        function triggerHyperdrive() {
+            isHyperdrive = true;
+            document.getElementById('hyperdrive-text').classList.remove('hidden');
+            synth.triggerAttackRelease(["C3", "E3", "G3", "C4"], "2n");
+            
+            setTimeout(() => {
+                isHyperdrive = false;
+                document.getElementById('hyperdrive-text').classList.add('hidden');
+            }, 4000);
+        }
+
+        function updateHUD() {
+            document.getElementById('health-bar').style.width = Math.max(0, health) + '%';
+            if(health < 30) document.getElementById('health-bar').classList.add('bg-red-500');
+            else document.getElementById('health-bar').classList.remove('bg-red-500');
+            
+            document.getElementById('score-display').innerText = score;
+            
+            // Format Velocity
+            const velText = isHyperdrive ? 'WARP 9.9' : 'MACH ' + (currentSpeed * 10).toFixed(1);
+            document.getElementById('velocity-display').innerText = velText;
+            
+            // Format Distance Display
+            document.getElementById('distance-display').innerText = Math.max(0, Math.floor(distance)) + ' km';
+            
+            // Update Journey Progress Bar
+            if (PLANETS[currentPlanetIndex]) {
+                const totalDist = PLANETS[currentPlanetIndex].dist;
+                const traveled = totalDist - distance;
+                const percent = Math.max(0, Math.min(100, (traveled / totalDist) * 100));
+                document.getElementById('journey-progress').style.width = percent + '%';
+            }
+        }
+
+        function activateShield() {
+            if (hasShield) {
+                score += 200; // Bonus if already shielded
+                updateHUD();
+                return;
+            }
+            hasShield = true;
+            shieldMesh.visible = true;
+            synth.triggerAttackRelease("G5", "8n");
+            
+            const shieldUI = document.getElementById('shield-text');
+            shieldUI.classList.remove('hidden');
+            setTimeout(() => shieldUI.classList.add('hidden'), 2000);
+        }
+
+        function handleDamage(amount) {
+            if (isHyperdrive) return; // Invincible during hyperdrive
+            
+            if (hasShield) {
+                hasShield = false;
+                shieldMesh.visible = false;
+                synth.triggerAttackRelease("C3", "8n"); // Heavy impact thud
+                createExplosion(vehicle.position.x, vehicle.position.y, vehicle.position.z - 2, 0xaa00ff);
+                
+                // Mini bullet time for shield break
+                timeScale = 0.5; 
+                setTimeout(() => { timeScale = 1.0; }, 400);
+                return;
+            }
+            
+            health -= amount;
+            updateHUD();
+            
+            // Screen shake
+            camera.position.x += (Math.random() - 0.5) * 2;
+            camera.position.y += (Math.random() - 0.5) * 2;
+            
+            // Audio crash
+            noiseFilter.frequency.rampTo(2000, 0.1);
+            noiseFilter.frequency.rampTo(400, 0.5);
+
+            if (health <= 0) gameOver();
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            noise.stop();
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('crosshair').classList.add('hidden');
+            document.getElementById('game-over').classList.remove('hidden');
+            document.getElementById('game-over').classList.add('flex');
+            document.getElementById('final-score').innerText = score;
+        }
+
+        function reachPlanet() {
+            gameState = 'ARRIVAL';
+            document.getElementById('arrival-name').innerText = PLANETS[currentPlanetIndex].name;
+            document.getElementById('planet-arrival').classList.remove('hidden');
+            document.getElementById('planet-arrival').classList.add('flex');
+            
+            synth.triggerAttackRelease(["C4", "G4", "C5"], "1m");
+            
+            health = 100;
+            score += 1000;
+            updateHUD();
+
+            setTimeout(() => {
+                document.getElementById('planet-arrival').classList.add('hidden');
+                
+                if (PLANETS[currentPlanetIndex].final) {
+                    gameOver();
+                    document.getElementById('game-over').querySelector('h2').innerText = "MISSION COMPLETE";
+                    document.getElementById('game-over').querySelector('h2').classList.replace('text-red-500', 'text-green-500');
+                } else {
+                    currentPlanetIndex++;
+                    spawnPlanet(PLANETS[currentPlanetIndex]);
+                    speedMult += 0.2;
+                    gameState = 'FLIGHT';
+                }
+            }, 3000);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (gameState === 'FLIGHT' && vehicle && starfield) {
+                // Dynamic Base Speed Calculation
+                const targetSpeed = (isHyperdrive ? 1.5 : 0.4) * speedMult * timeScale;
+                currentSpeed += (targetSpeed - currentSpeed) * 0.1;
+                
+                // Dynamic FOV (Warp effect)
+                camera.fov = isHyperdrive ? 100 : 55 + (currentSpeed * 20);
+                camera.updateProjectionMatrix();
+
+                // Engine sound pitch mapping
+                noiseFilter.frequency.value = 200 + (currentSpeed * 1000);
+                
+                // Pure Tracking Movement mapped to physical boundaries
+                const targetX = mouseX * BOUNDARY_X;
+                const targetY = mouseY * BOUNDARY_Y;
+                
+                vehicle.position.x += (targetX - vehicle.position.x) * 0.1;
+                vehicle.position.y += (targetY - vehicle.position.y) * 0.1;
+                
+                // Dynamic Banking/Pitching
+                vehicle.rotation.z = -(vehicle.position.x - targetX) * 0.1;
+                vehicle.rotation.x = (vehicle.position.y - targetY) * 0.1;
+                
+                // Starfield warp
+                const positions = starfield.geometry.attributes.position.array;
+                for(let i=2; i<positions.length; i+=3) {
+                    positions[i] += currentSpeed * 20;
+                    if(positions[i] > 100) positions[i] = -300;
+                }
+                starfield.geometry.attributes.position.needsUpdate = true;
+
+                if (Math.random() < 0.6) {
+                    createTrailParticle(
+                        vehicle.position.x + (Math.random()-0.5)*0.5, 
+                        vehicle.position.y - 0.2 + (Math.random()-0.5)*0.5, 
+                        vehicle.position.z - 2
+                    );
+                }
+
+                // Planet progression
+                distance -= currentSpeed * 2.5; // Scaled down the multiplier to match shorter km ranges
+                if (currentPlanetMesh && PLANETS[currentPlanetIndex]) {
+                    // Tie the visual Z position directly to the distance progress
+                    const progress = Math.max(0, distance / PLANETS[currentPlanetIndex].dist);
+                    const visualZ = -2000 * progress; // Spaced further visually for effect
+                    
+                    currentPlanetMesh.position.z = visualZ;
+                    if (ringMesh) ringMesh.position.z = visualZ;
+                }
+                if (distance <= 0) reachPlanet();
+                updateHUD();
+
+                // Spawning Mechanics
+                if (Math.random() < 0.08 * speedMult * timeScale) createAsteroid();
+                if (Math.random() < 0.02 * timeScale) createCrystal();
+                if (Math.random() < 0.002 * timeScale && !isHyperdrive) createWarpRing();
+                
+                if (Math.random() < 0.005 * speedMult * timeScale && speedMult > 1.0) createMine(); // Starts after Moon
+                if (Math.random() < 0.003 * timeScale) createShieldItem();
+
+                // Obstacle Management
+                let warningActive = false;
+
+                for (let i = mines.length - 1; i >= 0; i--) {
+                    let mine = mines[i];
+                    mine.userData.scalePulse += 0.1 * timeScale;
+                    const scale = 1 + Math.sin(mine.userData.scalePulse) * 0.2;
+                    mine.scale.set(scale, scale, scale);
+                    mine.rotation.x += 0.02 * timeScale;
+                    mine.rotation.y += 0.02 * timeScale;
+                    mine.position.z += currentSpeed * 0.8; // Slower than asteroids
+
+                    if (mine.position.z > -100 && mine.position.z < 0) warningActive = true;
+
+                    if (mine.position.distanceTo(vehicle.position) < 3.5) {
+                        createExplosion(mine.position.x, mine.position.y, mine.position.z, 0xff0000);
+                        handleDamage(50); // Massive damage
+                        scene.remove(mine);
+                        mines.splice(i, 1);
+                    } else if (mine.position.z > 20) {
+                        scene.remove(mine);
+                        mines.splice(i, 1);
+                        score += 25;
+                    }
+                }
+
+                for (let i = shields.length - 1; i >= 0; i--) {
+                    let sItem = shields[i];
+                    sItem.rotation.y += 0.08 * timeScale;
+                    sItem.rotation.x += 0.08 * timeScale;
+                    sItem.position.z += currentSpeed;
+
+                    if (sItem.position.distanceTo(vehicle.position) < 3) {
+                        activateShield();
+                        createExplosion(sItem.position.x, sItem.position.y, sItem.position.z, 0xff00ff);
+                        scene.remove(sItem);
+                        shields.splice(i, 1);
+                    } else if (sItem.position.z > 20) {
+                        scene.remove(sItem);
+                        shields.splice(i, 1);
+                    }
+                }
+
+                // Asteroids Loop
+                for (let i = asteroids.length - 1; i >= 0; i--) {
+                    let ast = asteroids[i];
+                    
+                    // Tumbling
+                    ast.rotation.x += ast.userData.rotX * timeScale;
+                    ast.rotation.y += ast.userData.rotY * timeScale;
+                    ast.rotation.z += ast.userData.rotZ * timeScale;
+
+                    // Movement
+                    let astSpeed = ast.userData.isShootingStar ? currentSpeed * 3 : currentSpeed;
+                    ast.position.z += astSpeed;
+
+                    if (ast.userData.isShootingStar && ast.position.z > -100 && ast.position.z < 0) {
+                        warningActive = true;
+                    }
+
+                    // Collision Logic
+                    const distToShip = ast.position.distanceTo(vehicle.position);
+                    
+                    if (distToShip < ast.userData.size + 1.5) {
+                        // HIT
+                        createExplosion(ast.position.x, ast.position.y, ast.position.z, ast.userData.isShootingStar ? 0xff3300 : 0x9999a0);
+                        handleDamage(ast.userData.isShootingStar ? 40 : 20);
+                        scene.remove(ast);
+                        asteroids.splice(i, 1);
+                    } else if (distToShip < ast.userData.size + 4.5 && ast.position.z > vehicle.position.z - 2 && ast.position.z < vehicle.position.z + 2) {
+                        // NEAR MISS (Only trigger once per asteroid)
+                        if (!ast.userData.nearMissTriggered && !isHyperdrive) {
+                            ast.userData.nearMissTriggered = true;
+                            triggerNearMiss();
+                        }
+                    } else if (ast.position.z > 20) {
+                        // Pass behind camera
+                        scene.remove(ast);
+                        asteroids.splice(i, 1);
+                        score += 10;
+                    }
+                }
+
+                // Crystals Loop
+                for (let i = crystals.length - 1; i >= 0; i--) {
+                    let crys = crystals[i];
+                    crys.rotation.y += 0.05 * timeScale;
+                    crys.rotation.x += 0.05 * timeScale;
+                    crys.position.z += currentSpeed;
+
+                    if (crys.position.distanceTo(vehicle.position) < 3) {
+                        health = Math.min(100, health + 10);
+                        score += 150;
+                        synth.triggerAttackRelease("E5", "8n");
+                        createExplosion(crys.position.x, crys.position.y, crys.position.z, 0x00ffff);
+                        scene.remove(crys);
+                        crystals.splice(i, 1);
+                        updateHUD();
+                    } else if (crys.position.z > 20) {
+                        scene.remove(crys);
+                        crystals.splice(i, 1);
+                    }
+                }
+
+                // Warp Rings Loop
+                for (let i = warpRings.length - 1; i >= 0; i--) {
+                    let ring = warpRings[i];
+                    ring.rotation.z += 0.02 * timeScale;
+                    ring.position.z += currentSpeed;
+
+                    if (ring.position.distanceTo(vehicle.position) < 4) {
+                        triggerHyperdrive();
+                        scene.remove(ring);
+                        warpRings.splice(i, 1);
+                    } else if (ring.position.z > 20) {
+                        scene.remove(ring);
+                        warpRings.splice(i, 1);
+                    }
+                }
+
+                // Warning Overlay
+                const overlay = document.getElementById('warning-overlay');
+                if (warningActive) overlay.classList.remove('hidden');
+                else overlay.classList.add('hidden');
+
+                // Particle Update
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let p = particles[i];
+                    p.age += 1 * timeScale;
+                    const pos = p.sys.geometry.attributes.position.array;
+                    for(let j=0; j<pos.length; j+=3) {
+                        pos[j] += p.vel[j/3].x * timeScale;
+                        pos[j+1] += p.vel[j/3].y * timeScale;
+                        pos[j+2] += p.vel[j/3].z * timeScale;
+                    }
+                    p.sys.geometry.attributes.position.needsUpdate = true;
+                    p.sys.material.opacity = 1 - (p.age / 30);
+                    
+                    if (p.age > 30) {
+                        scene.remove(p.sys);
+                        particles.splice(i, 1);
+                    }
+                }
+            }
+
+            // Restore camera position smoothly from shake
+            if (camera) {
+                camera.position.x += (0 - camera.position.x) * 0.1;
+                camera.position.y += (2 - camera.position.y) * 0.1;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Start Loop
+        animate();
+    </script>
+</body>
+</html>
